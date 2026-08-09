@@ -3,20 +3,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:todo_app/screens/todos/todo_dashboard.dart';
+import 'package:todo_app/services/supabase_service.dart';
 
 void main() {
-  testWidgets('Dashboard shows Add Todo button', (WidgetTester tester) async {
-    // initialize prefs with empty todos so list is empty (avoids layout overflow)
-    SharedPreferences.setMockInitialValues({'todos_v1': '[]'});
+  testWidgets('Dashboard UI renders list and header elements', (WidgetTester tester) async {
+    // 1. Setup mock storage and mock Supabase
+    SharedPreferences.setMockInitialValues({});
+    await SupabaseService.initialize(url: '', anonKey: '');
 
-    // provide larger surface so responsive layout doesn't overflow in test
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    // 2. Set screen size to prevent layout bounds issues in tests
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const ProviderScope(child: MaterialApp(home: TodoDashboard())));
+    // 3. Pump dashboard widget wrapped in Riverpod ProviderScope
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: TodoDashboard(),
+        ),
+      ),
+    );
 
     await tester.pumpAndSettle();
 
+    // 4. Verify core UI elements exist
+    expect(find.text('Workspace'), findsOneWidget);
     expect(find.text('Add Task'), findsWidgets);
+    expect(find.text('Local Guest Workspace'), findsOneWidget);
   });
 }
