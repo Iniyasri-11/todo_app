@@ -18,6 +18,7 @@ class TodoRepository extends ChangeNotifier {
   final List<SyncCommand> _syncQueue = [];
 
   bool _isLoading = false;
+  bool _isSyncing = false;
   String? _errorMessage;
   bool _isOfflineSimulated = false; // Manually toggleable via UI for offline testing
   StreamSubscription<List<Todo>>? _realtimeSubscription;
@@ -71,6 +72,7 @@ class TodoRepository extends ChangeNotifier {
   List<Todo> get todos => List.unmodifiable(_todos);
   List<SyncCommand> get syncQueue => List.unmodifiable(_syncQueue);
   bool get isLoading => _isLoading;
+  bool get isSyncing => _isSyncing;
   String? get errorMessage => _errorMessage;
   
   /// Combines simulated toggle and actual device state (mocked or real)
@@ -181,7 +183,7 @@ class TodoRepository extends ChangeNotifier {
 
   // --- Optimistic CRUD Operations ---
 
-  void addTodo(Todo todo) {
+  void addTodo(Todo todo) async {
     if (!authRepository.isAuthenticated) return;
     final finalTodo = todo.userId == null ? todo.copyWith(userId: authRepository.userId) : todo;
 
@@ -192,16 +194,17 @@ class TodoRepository extends ChangeNotifier {
 
     // 2. Perform Backend sync or queue
     if (isOnline) {
-      SupabaseService.instance.createTodo(finalTodo).catchError((error) {
-        // Network fail: add to queue
+      try {
+        await SupabaseService.instance.createTodo(finalTodo);
+      } catch (error) {
         _queueAction(SyncAction.insert, finalTodo);
-      });
+      }
     } else {
       _queueAction(SyncAction.insert, finalTodo);
     }
   }
 
-  void updateTodo(Todo todo) {
+  void updateTodo(Todo todo) async {
     if (!authRepository.isAuthenticated) return;
 
     // 1. Optimistic Update Local State
@@ -214,15 +217,17 @@ class TodoRepository extends ChangeNotifier {
 
     // 2. Perform Backend sync or queue
     if (isOnline) {
-      SupabaseService.instance.updateTodo(todo).catchError((error) {
+      try {
+        await SupabaseService.instance.updateTodo(todo);
+      } catch (error) {
         _queueAction(SyncAction.update, todo);
-      });
+      }
     } else {
       _queueAction(SyncAction.update, todo);
     }
   }
 
-  void deleteTodo(String id) {
+  void deleteTodo(String id) async {
     if (!authRepository.isAuthenticated) return;
 
     final idx = _todos.indexWhere((t) => t.id == id);
@@ -236,9 +241,11 @@ class TodoRepository extends ChangeNotifier {
 
     // 2. Perform Backend sync or queue
     if (isOnline) {
-      SupabaseService.instance.deleteTodo(id).catchError((error) {
+      try {
+        await SupabaseService.instance.deleteTodo(id);
+      } catch (error) {
         _queueAction(SyncAction.delete, deletedTodo);
-      });
+      }
     } else {
       _queueAction(SyncAction.delete, deletedTodo);
     }
@@ -296,6 +303,10 @@ class TodoRepository extends ChangeNotifier {
     if (isOffline || !authRepository.isAuthenticated) return;
 
     _errorMessage = null;
+    _isSyncing = true;
+    notifyListeners();
+
+    try {
     
     // 1. Replay queued commands in chronological order
     if (_syncQueue.isNotEmpty) {
@@ -339,9 +350,11 @@ class TodoRepository extends ChangeNotifier {
       _mergeRemoteTodos(remoteTodos);
     } catch (e) {
       if (kDebugMode) print('Failed to fetch remote todos: $e');
-      if (_errorMessage == null) {
-        _errorMessage = 'Sync warning: Fetching latest database entries failed.';
-      }
+      _errorMessage ??= 'Sync warning: Fetching latest database entries failed.';
+    }
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
     }
   }
 

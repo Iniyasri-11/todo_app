@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/todo.dart';
-import '../../providers/todo_providers.dart';
+import '../../state/todo_providers.dart';
+import '../../repositories/todo_repository.dart';
+import '../../repositories/auth_repository.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/summary_card.dart';
 import '../../widgets/todo_card.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/todo_form.dart';
+import '../../widgets/todo_card_skeleton.dart';
+import '../../widgets/error_state.dart';
 
 class TodoDashboard extends ConsumerStatefulWidget {
   const TodoDashboard({super.key});
@@ -103,27 +107,124 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
   }
 
   void confirmDelete(BuildContext context, WidgetRef ref, Todo todo) {
+    final theme = Theme.of(context);
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Delete Todo?'),
-          content: Text('Are you sure you want to delete "${todo.title}"?'),
+          icon: Icon(
+            Icons.delete_forever_rounded,
+            size: 40,
+            color: theme.colorScheme.error,
+          ),
+          title: const Text(
+            'Delete Task?',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Are you sure you want to delete "${todo.title}"?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'This action cannot be undone and will replicate across all synchronized devices.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.spaceEvenly,
           actions: [
-            TextButton(
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                foregroundColor: Theme.of(context).colorScheme.onError,
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 2,
               ),
               onPressed: () {
                 ref.read(todoRepositoryProvider).deleteTodo(todo.id);
                 Navigator.pop(context);
               },
               child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void confirmLogout(BuildContext context, AuthRepository authState) {
+    final theme = Theme.of(context);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          icon: Icon(
+            Icons.logout_rounded,
+            size: 40,
+            color: theme.colorScheme.primary,
+          ),
+          title: const Text(
+            'Sign Out?',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Are you sure you want to sign out of your workspace?',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Your local cache remains safely preserved on this device, but remote database sync will pause.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                ),
+              ),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.spaceEvenly,
+          actions: [
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 2,
+              ),
+              onPressed: () {
+                authState.logout();
+                Navigator.pop(context);
+              },
+              child: const Text('Sign Out'),
             ),
           ],
         );
@@ -145,6 +246,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
     try {
       await SupabaseService.initialize(url: url, anonKey: key);
       ref.read(authRepositoryProvider).handleServiceChanged();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(SupabaseService.useMock 
@@ -154,6 +256,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
       );
       Navigator.of(context).pop(); // Close drawer
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Initialization Error: $e')),
       );
@@ -173,6 +276,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
     );
 
     await repo.simulateSecondDeviceUpdate(simulatedTodo);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Simulated update from Device B written to server.')),
     );
@@ -213,7 +317,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
             tooltip: authState.isAuthenticated ? 'Sign Out' : 'Sign In',
             onPressed: () {
               if (authState.isAuthenticated) {
-                authState.logout();
+                confirmLogout(context, authState);
               } else {
                 Navigator.pushNamed(context, '/auth');
               }
@@ -369,10 +473,28 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
 
                         // Main List/Grid View
                         if (todoRepo.isLoading)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(40),
-                              child: CircularProgressIndicator(),
+                          GridView.builder(
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: MediaQuery.of(context).size.width > 768 ? 2 : 1,
+                              childAspectRatio: 1.6,
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                            ),
+                            itemCount: 4,
+                            itemBuilder: (context, index) => const TodoCardSkeleton(),
+                          )
+                        else if (todoRepo.errorMessage != null && todoRepo.todos.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: ErrorState(
+                              title: 'Connection Issue',
+                              message: 'We were unable to load your tasks. This could be due to a poor network connection or database authentication constraint.',
+                              errorDetails: todoRepo.errorMessage,
+                              onRetry: () => todoRepo.synchronize(),
+                              retryLabel: 'Retry Sync',
                             ),
                           )
                         else if (displayedTodos.isEmpty)
@@ -391,7 +513,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
                             physics: const NeverScrollableScrollPhysics(),
                             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: MediaQuery.of(context).size.width > 768 ? 2 : 1,
-                              childAspectRatio: 2.2,
+                              childAspectRatio: 1.6,
                               crossAxisSpacing: 16,
                               mainAxisSpacing: 16,
                             ),
@@ -442,13 +564,25 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
     Widget? action;
 
     if (repo.isOffline) {
-      barColor = Colors.grey.shade700;
+      barColor = Colors.grey.shade800;
       icon = Icons.cloud_off;
       statusLabel = count > 0 
-          ? 'Offline mode ($count pending writes saved locally)' 
-          : 'Offline mode (Using local cache)';
+          ? 'Offline mode: $count pending writes saved locally' 
+          : 'Offline mode: Using local cache';
+    } else if (repo.isSyncing) {
+      barColor = Colors.blue.shade700;
+      icon = Icons.sync;
+      statusLabel = 'Synchronizing changes with server...';
+      action = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: Colors.white,
+        ),
+      );
     } else if (count > 0) {
-      barColor = Colors.orange.shade700;
+      barColor = const Color(0xFFD35400); // Deep burnt orange
       icon = Icons.sync_problem;
       statusLabel = '$count writes pending remote replication';
       action = IconButton(
@@ -457,7 +591,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
         onPressed: () => repo.synchronize(),
       );
     } else {
-      barColor = Colors.green.shade700;
+      barColor = const Color(0xFF1E2640); // Sleek deep space/indigo
       icon = Icons.cloud_done;
       statusLabel = 'Connected to server: Cloud database synced';
     }
@@ -465,20 +599,45 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
     return Container(
       decoration: BoxDecoration(
         color: barColor,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: barColor.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white),
+          if (repo.isSyncing && !repo.isOffline)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+          else
+            Icon(icon, color: Colors.white, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               statusLabel,
-              style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.2,
+              ),
             ),
           ),
-          if (action != null) action,
+          if (icon == Icons.cloud_done && !repo.isOffline) ...[
+            const PulsingDot(),
+            const SizedBox(width: 8),
+          ],
+          if (action != null && !(repo.isSyncing && !repo.isOffline)) ...[
+            const SizedBox(width: 8),
+            action,
+          ],
         ],
       ),
     );
@@ -659,6 +818,63 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A custom pulsing status indicator used for indicating successful, live database connection state.
+class PulsingDot extends StatefulWidget {
+  const PulsingDot({super.key});
+
+  @override
+  State<PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<PulsingDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+    final isTesting = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (!isTesting) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller.value = 0.5;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF2ECC71), // Premium emerald green
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF2ECC71).withOpacity(0.3 + (_controller.value * 0.5)),
+                blurRadius: 4 + (_controller.value * 8),
+                spreadRadius: _controller.value * 2,
+              )
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/todo_providers.dart';
+import '../../state/todo_providers.dart';
 
 enum AuthMode { login, register, reset }
 
@@ -51,6 +51,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     } else if (_mode == AuthMode.reset) {
       success = await authRepo.resetPassword(email);
       if (success) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Password reset email sent (simulated).')),
         );
@@ -58,7 +59,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       }
     }
 
-    if (success && mounted && _mode != AuthMode.reset) {
+    if (success && _mode != AuthMode.reset) {
+      if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/dashboard');
     }
   }

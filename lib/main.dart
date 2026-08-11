@@ -4,7 +4,14 @@ import 'core/theme/app_theme.dart';
 import 'screens/auth/auth_page.dart';
 import 'screens/todos/todo_dashboard.dart';
 
-void main() {
+import 'services/supabase_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseService.initialize(
+    url: 'https://wnnndfwgtezpycvtager.supabase.co',
+    anonKey: 'sb_publishable_ObqvM-GbY5BL5rBDx_WSeQ_oobE9RDz',
+  );
   runApp(const ProviderScope(child: TodoApp()));
 }
 
