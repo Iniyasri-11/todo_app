@@ -28,11 +28,19 @@ class AuthRepository extends ChangeNotifier {
     });
   }
 
+  bool _isGuestMode = false;
+
   String? get userId => _userId;
   String? get userEmail => _userEmail;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _userId != null;
+  bool get isGuestMode => _isGuestMode;
+
+  void setGuestMode(bool val) {
+    _isGuestMode = val;
+    notifyListeners();
+  }
 
   Future<bool> register(String email, String password) async {
     _setLoading(true);
@@ -40,6 +48,7 @@ class AuthRepository extends ChangeNotifier {
       final uid = await SupabaseService.instance.signUp(email, password);
       _userId = uid;
       _userEmail = email;
+      _isGuestMode = false;
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -58,6 +67,7 @@ class AuthRepository extends ChangeNotifier {
       final uid = await SupabaseService.instance.signIn(email, password);
       _userId = uid;
       _userEmail = email;
+      _isGuestMode = false;
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -76,6 +86,7 @@ class AuthRepository extends ChangeNotifier {
       await SupabaseService.instance.signOut();
       _userId = null;
       _userEmail = null;
+      _isGuestMode = false;
       _errorMessage = null;
       notifyListeners();
     } catch (e) {

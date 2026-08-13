@@ -21,29 +21,10 @@ class TodoDashboard extends ConsumerStatefulWidget {
 
 class _TodoDashboardState extends ConsumerState<TodoDashboard> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final _supabaseUrlController = TextEditingController();
-  final _supabaseKeyController = TextEditingController();
 
   String searchText = '';
   String filter = 'All';
   String sortBy = 'Due Date';
-
-  @override
-  void initState() {
-    super.initState();
-    // Pre-populate if already initialized with real SDK
-    if (!SupabaseService.useMock) {
-      _supabaseUrlController.text = 'Real Client Connected';
-      _supabaseKeyController.text = '••••••••••••••••••••';
-    }
-  }
-
-  @override
-  void dispose() {
-    _supabaseUrlController.dispose();
-    _supabaseKeyController.dispose();
-    super.dispose();
-  }
 
   List<Todo> getFilteredTodos(List<Todo> baseTodos) {
     final searched = baseTodos.where((todo) {
@@ -223,6 +204,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
               onPressed: () {
                 authState.logout();
                 Navigator.pop(context);
+                Navigator.pushReplacementNamed(context, '/auth');
               },
               child: const Text('Sign Out'),
             ),
@@ -232,36 +214,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
     );
   }
 
-  void _applyCredentials() async {
-    final url = _supabaseUrlController.text.trim();
-    final key = _supabaseKeyController.text.trim();
 
-    if (url.isEmpty || key.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter both Supabase URL and Anon Key.')),
-      );
-      return;
-    }
-
-    try {
-      await SupabaseService.initialize(url: url, anonKey: key);
-      ref.read(authRepositoryProvider).handleServiceChanged();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(SupabaseService.useMock 
-              ? 'Failed to connect. Using mock mode.' 
-              : 'Successfully connected to live Supabase!'),
-        ),
-      );
-      Navigator.of(context).pop(); // Close drawer
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Initialization Error: $e')),
-      );
-    }
-  }
 
   void _triggerSimulatedDeviceChange(TodoRepository repo) async {
     final now = DateTime.now();
@@ -298,7 +251,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
         title: const Text(
-          'Workspace',
+          'TaskCraft',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -309,6 +262,47 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
                 child: Text(
                   '${authState.userEmail}',
                   style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            )
+          else if (authState.isGuestMode)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/auth');
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.colorScheme.secondary.withOpacity(0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.account_circle_outlined,
+                          size: 14,
+                          color: theme.colorScheme.secondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Guest Profile',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -473,19 +467,45 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
 
                         // Main List/Grid View
                         if (todoRepo.isLoading)
-                          GridView.builder(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: MediaQuery.of(context).size.width > 768 ? 2 : 1,
-                              childAspectRatio: 1.6,
-                              crossAxisSpacing: 16,
-                              mainAxisSpacing: 16,
-                            ),
-                            itemCount: 4,
-                            itemBuilder: (context, index) => const TodoCardSkeleton(),
-                          )
+                          if (MediaQuery.of(context).size.width > 768)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      for (int i = 0; i < 2; i++)
+                                        const Padding(
+                                          padding: EdgeInsets.only(bottom: 10),
+                                          child: TodoCardSkeleton(),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      for (int i = 0; i < 2; i++)
+                                        const Padding(
+                                          padding: EdgeInsets.only(bottom: 10),
+                                          child: TodoCardSkeleton(),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Column(
+                              children: [
+                                for (int i = 0; i < 4; i++)
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 10),
+                                    child: TodoCardSkeleton(),
+                                  ),
+                              ],
+                            )
                         else if (todoRepo.errorMessage != null && todoRepo.todos.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 24),
@@ -506,27 +526,59 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
                             action: () => showTodoForm(context, ref),
                             actionLabel: 'Create Task',
                           )
+                        else if (MediaQuery.of(context).size.width > 768)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    for (int i = 0; i < displayedTodos.length; i += 2)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: TodoCard(
+                                          todo: displayedTodos[i],
+                                          onComplete: (value) => todoRepo.toggleComplete(displayedTodos[i].id, value ?? false),
+                                          onEdit: () => showTodoForm(context, ref, existingTodo: displayedTodos[i]),
+                                          onDelete: () => confirmDelete(context, ref, displayedTodos[i]),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    for (int i = 1; i < displayedTodos.length; i += 2)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: TodoCard(
+                                          todo: displayedTodos[i],
+                                          onComplete: (value) => todoRepo.toggleComplete(displayedTodos[i].id, value ?? false),
+                                          onEdit: () => showTodoForm(context, ref, existingTodo: displayedTodos[i]),
+                                          onDelete: () => confirmDelete(context, ref, displayedTodos[i]),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
                         else
-                          GridView.builder(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: MediaQuery.of(context).size.width > 768 ? 2 : 1,
-                              childAspectRatio: 1.6,
-                              crossAxisSpacing: 16,
-                              mainAxisSpacing: 16,
-                            ),
-                            itemCount: displayedTodos.length,
-                            itemBuilder: (context, index) {
-                              final todo = displayedTodos[index];
-                              return TodoCard(
-                                todo: todo,
-                                onComplete: (value) => todoRepo.toggleComplete(todo.id, value ?? false),
-                                onEdit: () => showTodoForm(context, ref, existingTodo: todo),
-                                onDelete: () => confirmDelete(context, ref, todo),
-                              );
-                            },
+                          Column(
+                            children: [
+                              for (final todo in displayedTodos)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: TodoCard(
+                                    todo: todo,
+                                    onComplete: (value) => todoRepo.toggleComplete(todo.id, value ?? false),
+                                    onEdit: () => showTodoForm(context, ref, existingTodo: todo),
+                                    onDelete: () => confirmDelete(context, ref, todo),
+                                  ),
+                                ),
+                            ],
                           ),
                       ],
                     ),
@@ -671,37 +723,7 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Icon(Icons.lock_person_outlined, color: theme.colorScheme.onSecondaryContainer),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Local Guest Workspace', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                Text('Log in to persist, sync, and replicate tasks across multiple active sessions.', style: theme.textTheme.bodySmall),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.pushNamed(context, '/auth'),
-            child: const Text('Log In'),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   Widget _buildSummarySection(List<Todo> allTodos) {
@@ -776,26 +798,6 @@ class _TodoDashboardState extends ConsumerState<TodoDashboard> {
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 16),
-
-              Text('Supabase Credentials', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text('Supply custom credentials to switch to your live database instance:', style: theme.textTheme.bodySmall),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _supabaseUrlController,
-                decoration: const InputDecoration(labelText: 'Supabase URL', prefixIcon: Icon(Icons.link)),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _supabaseKeyController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Anon API Key', prefixIcon: Icon(Icons.key)),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _applyCredentials,
-                child: const Text('Apply and Connect'),
-              ),
 
               const Spacer(),
 

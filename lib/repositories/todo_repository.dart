@@ -22,6 +22,7 @@ class TodoRepository extends ChangeNotifier {
   String? _errorMessage;
   bool _isOfflineSimulated = false; // Manually toggleable via UI for offline testing
   StreamSubscription<List<Todo>>? _realtimeSubscription;
+  bool _isDisposed = false;
 
   TodoRepository({required this.authRepository}) {
     _init();
@@ -38,12 +39,6 @@ class TodoRepository extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    if (!authRepository.isAuthenticated) {
-      _isLoading = false;
-      notifyListeners();
-      return;
-    }
-
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -52,13 +47,13 @@ class TodoRepository extends ChangeNotifier {
       // 1. Load from local cache first (Optimistic UI)
       await _loadFromLocalCache();
 
-      // 2. Load the offline sync queue
-      await _loadSyncQueue();
-
-      // 3. If online, attempt to sync and subscribe to real-time updates
-      if (isOnline) {
-        await synchronize();
-        _subscribeToRealtime();
+      // 2. If authenticated, load sync queue and synchronize
+      if (authRepository.isAuthenticated) {
+        await _loadSyncQueue();
+        if (isOnline) {
+          await synchronize();
+          _subscribeToRealtime();
+        }
       }
     } catch (e) {
       _errorMessage = 'Initialization warning: ${e.toString()}';
@@ -184,7 +179,6 @@ class TodoRepository extends ChangeNotifier {
   // --- Optimistic CRUD Operations ---
 
   void addTodo(Todo todo) async {
-    if (!authRepository.isAuthenticated) return;
     final finalTodo = todo.userId == null ? todo.copyWith(userId: authRepository.userId) : todo;
 
     // 1. Optimistic Update Local State
@@ -192,7 +186,9 @@ class TodoRepository extends ChangeNotifier {
     _saveToLocalCache();
     notifyListeners();
 
-    // 2. Perform Backend sync or queue
+    // 2. Perform Backend sync or queue if authenticated
+    if (!authRepository.isAuthenticated) return;
+
     if (isOnline) {
       try {
         await SupabaseService.instance.createTodo(finalTodo);
@@ -205,8 +201,6 @@ class TodoRepository extends ChangeNotifier {
   }
 
   void updateTodo(Todo todo) async {
-    if (!authRepository.isAuthenticated) return;
-
     // 1. Optimistic Update Local State
     final idx = _todos.indexWhere((t) => t.id == todo.id);
     if (idx != -1) {
@@ -215,7 +209,9 @@ class TodoRepository extends ChangeNotifier {
       notifyListeners();
     }
 
-    // 2. Perform Backend sync or queue
+    // 2. Perform Backend sync or queue if authenticated
+    if (!authRepository.isAuthenticated) return;
+
     if (isOnline) {
       try {
         await SupabaseService.instance.updateTodo(todo);
@@ -228,8 +224,6 @@ class TodoRepository extends ChangeNotifier {
   }
 
   void deleteTodo(String id) async {
-    if (!authRepository.isAuthenticated) return;
-
     final idx = _todos.indexWhere((t) => t.id == id);
     if (idx == -1) return;
     final deletedTodo = _todos[idx];
@@ -239,7 +233,9 @@ class TodoRepository extends ChangeNotifier {
     _saveToLocalCache();
     notifyListeners();
 
-    // 2. Perform Backend sync or queue
+    // 2. Perform Backend sync or queue if authenticated
+    if (!authRepository.isAuthenticated) return;
+
     if (isOnline) {
       try {
         await SupabaseService.instance.deleteTodo(id);
@@ -414,8 +410,16 @@ class TodoRepository extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _realtimeSubscription?.cancel();
     authRepository.removeListener(_onAuthChanged);
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
   }
 }

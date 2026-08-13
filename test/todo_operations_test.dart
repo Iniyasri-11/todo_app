@@ -204,7 +204,7 @@ void main() {
     expect(find.text('Welcome to your Workspace!'), findsOneWidget);
 
     // Find and tap the delete icon on the first task card
-    final deleteIcon = find.byIcon(Icons.delete).first;
+    final deleteIcon = find.byIcon(Icons.delete_outline).first;
     await tester.tap(deleteIcon);
     await tester.pumpAndSettle();
 
@@ -230,4 +230,62 @@ void main() {
     // Verify task is removed from UI list
     expect(find.text('Welcome to your Workspace!'), findsNothing);
   });
+
+  testWidgets('Guest user can add todo locally in guest workspace', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final guestAuthRepo = MockGuestAuthRepository();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWith((ref) => guestAuthRepo),
+        ],
+        child: const MaterialApp(
+          home: TodoDashboard(),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    // Verify Guest Profile header tag is displayed in AppBar
+    expect(find.text('Guest Profile'), findsOneWidget);
+
+    // Tap on Add Task button
+    final addTaskButton = find.widgetWithText(FilledButton, 'Add Task');
+    expect(addTaskButton, findsOneWidget);
+    await tester.tap(addTaskButton);
+    await tester.pumpAndSettle();
+
+    // Verify Add New Todo dialog is displayed
+    expect(find.text('Add New Todo'), findsOneWidget);
+
+    // Enter a valid title and save
+    final titleField = find.widgetWithText(TextFormField, 'Title');
+    await tester.enterText(titleField, 'Guest local test task');
+    
+    final saveButton = find.text('Save');
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    // Verify dialog closes and task is rendered on the dashboard locally
+    expect(find.text('Add New Todo'), findsNothing);
+    expect(find.text('Guest local test task'), findsOneWidget);
+  });
+}
+
+class MockGuestAuthRepository extends AuthRepository {
+  @override
+  bool get isAuthenticated => false;
+
+  @override
+  bool get isGuestMode => true;
+
+  @override
+  String? get userEmail => null;
+
+  @override
+  String? get userId => null;
 }

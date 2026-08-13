@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/supabase_service.dart';
 import '../../state/todo_providers.dart';
 
 enum AuthMode { login, register, reset }
@@ -19,6 +21,16 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(authRepositoryProvider).isAuthenticated) {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -343,8 +355,17 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                           ),
-                          onPressed: () => Navigator.pushReplacementNamed(context, '/dashboard'),
+                          onPressed: () {
+                            ref.read(authRepositoryProvider).setGuestMode(true);
+                            Navigator.pushReplacementNamed(context, '/dashboard');
+                          },
                           child: const Text('Continue as Guest'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          icon: const Icon(Icons.admin_panel_settings_outlined),
+                          label: const Text('Admin Database Settings'),
+                          onPressed: _showAdminAuthDialog,
                         ),
                       ],
                     ),
@@ -355,6 +376,142 @@ class _AuthPageState extends ConsumerState<AuthPage> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showAdminAuthDialog() {
+    final passwordController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Admin Authentication'),
+          content: TextField(
+            controller: passwordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Admin Password',
+              hintText: 'Enter admin password',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final password = passwordController.text;
+                Navigator.pop(context);
+                if (password == 'admin') {
+                  _showSupabaseConfigDialog();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Invalid admin credentials.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Authenticate'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSupabaseConfigDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUrl = prefs.getString('admin_supabase_url') ?? 'https://wnnndfwgtezpycvtager.supabase.co';
+    final currentKey = prefs.getString('admin_supabase_key') ?? 'sb_publishable_ObqvM-GbY5BL5rBDx_WSeQ_oobE9RDz';
+
+    final urlController = TextEditingController(text: currentUrl == 'https://wnnndfwgtezpycvtager.supabase.co' ? '' : currentUrl);
+    final keyController = TextEditingController(text: currentKey == 'sb_publishable_ObqvM-GbY5BL5rBDx_WSeQ_oobE9RDz' ? '' : currentKey);
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Supabase Configuration'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Configure the remote database connection details for this application instance.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: urlController,
+                  decoration: const InputDecoration(
+                    labelText: 'Supabase URL',
+                    hintText: 'https://xxx.supabase.co',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: keyController,
+                  decoration: const InputDecoration(
+                    labelText: 'Anon API Key',
+                    hintText: 'sb_publishable_xxx',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final url = urlController.text.trim();
+                final key = keyController.text.trim();
+
+                if (url.isEmpty || key.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Both URL and Key are required.')),
+                  );
+                  return;
+                }
+
+                try {
+                  // Save to SharedPreferences
+                  final p = await SharedPreferences.getInstance();
+                  await p.setString('admin_supabase_url', url);
+                  await p.setString('admin_supabase_key', key);
+
+                  // Dynamically re-initialize SupabaseService
+                  await SupabaseService.initialize(url: url, anonKey: key);
+                  
+                  // Reset repositories state
+                  ref.read(authRepositoryProvider).handleServiceChanged();
+
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Connected to new Supabase instance successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Connection failed: $e')),
+                  );
+                }
+              },
+              child: const Text('Save and Connect'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
